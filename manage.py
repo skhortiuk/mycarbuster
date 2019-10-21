@@ -37,6 +37,7 @@ from donkeycar.utils import *
 from tensorflow.python import keras
 
 from car.camera import CameraConfiguration
+from car.controller import ControllerConfiguration
 
 
 def drive(cfg, model_path: str = None, use_joystick=False, model_type=None,
@@ -60,26 +61,7 @@ def drive(cfg, model_path: str = None, use_joystick=False, model_type=None,
     print("[*] Camera is ready...")
 
     print("[*] Setup joystick...")
-    if use_joystick or cfg.USE_JOYSTICK_AS_DEFAULT:
-        # modify max_throttle closer to 1.0 to have more power
-        # modify steering_scale lower than 1.0 to have less responsive steering
-        ctr = get_js_controller(cfg)
-
-        if cfg.USE_NETWORKED_JS:
-            network_js = JoyStickSub(cfg.NETWORK_JS_SERVER_IP)
-            vehicle.add(network_js, threaded=True)
-            ctr.js = network_js
-
-    else:
-        # This web controller will create a web server that is capable
-        # of managing steering, throttle, and modes, and more.
-        ctr = LocalWebController()
-
-    vehicle.add(ctr,
-                inputs=['cam/image_array'],
-                outputs=['user/angle', 'user/throttle', 'user/mode',
-                         'recording'],
-                threaded=True)
+    controller = ControllerConfiguration(vehicle)
     print("[*] Joystick is ready...")
 
     # this throttle filter will allow one tap back for esc reverse
@@ -122,6 +104,7 @@ def drive(cfg, model_path: str = None, use_joystick=False, model_type=None,
             rec_tracker_part.last_num_rec_print = 0
             rec_tracker_part.force_alert = 1
 
+        # Todo: move to controller
         ctr.set_button_down_trigger('circle', show_record_amount_status)
 
     class ImgPreProcess:
@@ -369,14 +352,6 @@ def drive(cfg, model_path: str = None, use_joystick=False, model_type=None,
     tub = th.new_tub_writer(inputs=inputs, types=types, user_meta=meta)
     vehicle.add(tub, inputs=inputs, outputs=["tub/num_records"],
                 run_condition='recording')
-
-    if cfg.PUB_CAMERA_IMAGES:
-        from donkeycar.parts.network import TCPServeValue
-        from donkeycar.parts.image import ImgArrToJpg
-        pub = TCPServeValue("camera")
-        vehicle.add(ImgArrToJpg(), inputs=['cam/image_array'],
-                    outputs=['jpg/bin'])
-        vehicle.add(pub, inputs=['jpg/bin'])
 
     if type(ctr) is LocalWebController:
         print("You can now go to <your pi ip address>:8887 to drive your car.")
